@@ -10,8 +10,8 @@ interface TTSHook {
 
 const DEFAULT_OPTIONS: TTSOptions = {
   lang: 'ru',
-  rate: 0.95,
-  pitch: 0.75, // Более низкий pitch для мужского голоса
+  rate: 1.0,
+  pitch: 0.8,  // Немного ниже для мужского голоса
 };
 
 const MAX_TEXT_LENGTH = 500;
@@ -21,8 +21,50 @@ export function useTTS(): TTSHook {
   const [isSupported] = useState(() => 'speechSynthesis' in window);
   const timeoutRef = useRef<number>();
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const voicesLoadedRef = useRef(false);
+  const bestVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
 
   useEffect(() => {
+    if (!isSupported) return;
+
+    const loadVoices = () => {
+      const voices = window.speechSynthesis.getVoices();
+      if (voices.length > 0) {
+        voicesLoadedRef.current = true;
+        
+        // Ищем лучший русский голос
+        const russianVoices = voices.filter(v => v.lang.startsWith('ru'));
+        
+        console.log('🎙️ Available Russian voices:', russianVoices.map(v => v.name));
+        
+        // Приоритет голосов
+        const preferredNames = ['Yuri', 'Google русский', 'Milena', 'Microsoft Pavel'];
+        
+        for (const preferred of preferredNames) {
+          const voice = russianVoices.find(v => v.name.includes(preferred));
+          if (voice) {
+            bestVoiceRef.current = voice;
+            console.log('✅ Selected voice:', voice.name);
+            return;
+          }
+        }
+        
+        // Если не нашли предпочтительный, берём первый русский
+        if (russianVoices.length > 0) {
+          bestVoiceRef.current = russianVoices[0];
+          console.log('✅ Selected fallback voice:', russianVoices[0].name);
+        }
+      }
+    };
+
+    // Загружаем голоса сразу
+    loadVoices();
+    
+    // И подписываемся на событие загрузки
+    if (window.speechSynthesis.onvoiceschanged !== undefined) {
+      window.speechSynthesis.onvoiceschanged = loadVoices;
+    }
+
     return () => {
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
@@ -31,7 +73,7 @@ export function useTTS(): TTSHook {
         window.speechSynthesis.cancel();
       }
     };
-  }, []);
+  }, [isSupported]);
 
   const cancel = useCallback(() => {
     console.log('🔇 TTS cancel');
@@ -57,6 +99,18 @@ export function useTTS(): TTSHook {
         cancel();
       }
 
+      // Если голоса ещё не загружены, загружаем их сейчас
+      if (!voicesLoadedRef.current) {
+        const voices = window.speechSynthesis.getVoices();
+        if (voices.length > 0) {
+          const russianVoices = voices.filter(v => v.lang.startsWith('ru'));
+          if (russianVoices.length > 0) {
+            bestVoiceRef.current = russianVoices[0];
+            voicesLoadedRef.current = true;
+          }
+        }
+      }
+
       let textToSpeak = text;
       if (text.length > MAX_TEXT_LENGTH) {
         textToSpeak = text.substring(0, MAX_TEXT_LENGTH) + '...';
@@ -72,23 +126,22 @@ export function useTTS(): TTSHook {
         kk: 'kk-KZ',
       };
       utterance.lang = langMap[mergedOptions.lang] || 'ru-RU';
-      utterance.rate = mergedOptions.rate ?? 0.95;
-      utterance.pitch = mergedOptions.pitch ?? 0.75;
+      utterance.rate = mergedOptions.rate ?? 1.0;
+      utterance.pitch = mergedOptions.pitch ?? 0.8;
 
-      // Попытка выбрать мужской голос
-      const voices = window.speechSynthesis.getVoices();
-      const maleVoice = voices.find(voice => 
-        voice.lang.startsWith(utterance.lang.split('-')[0]) && 
-        (voice.name.toLowerCase().includes('male') || 
-         voice.name.toLowerCase().includes('yuri') ||
-         voice.name.toLowerCase().includes('dmitry') ||
-         voice.name.toLowerCase().includes('milena') === false)
-      );
-      
-      if (maleVoice) {
-        utterance.voice = maleVoice;
-        console.log('🎙️ Selected voice:', maleVoice.name);
+      // Используем лучший голос если он найден
+      if (bestVoiceRef.current) {
+        utterance.voice = bestVoiceRef.current;
+        console.log('🎙️ Using voice:', bestVoiceRef.current.name);
+      } else {
+        console.warn('⚠️ No specific voice selected, using default');
       }
+
+      // Добавляем паузы для естественности
+      utterance.text = textToSpeak
+        .replace(/\./g, '. ')
+        .replace(/,/g, ', ')
+        .replace(/:/g, ': ');
 
       utterance.onstart = () => {
         console.log('▶️ TTS started');
@@ -114,6 +167,15 @@ export function useTTS(): TTSHook {
       };
 
       console.log('🎤 Calling speechSynthesis.speak()');
+      console.log('📊 Settings:', {
+        voice: utterance.voice?.name || 'default',
+        rate: utterance.rate,
+        pitch: utterance.pitch,
+        lang: utterance.lang
+      });
+
+      // Важно: сначала отменяем все предыдущие, потом говорим
+      window.speechSynthesis.cancel();
       window.speechSynthesis.speak(utterance);
 
       // iOS fallback timeout

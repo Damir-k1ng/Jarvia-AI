@@ -1,6 +1,15 @@
+// Type definitions
 export type JarvisState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
+
 export type Language = 'ru' | 'kk';
-export type Intent = 'BOOK_DOCTOR' | 'CALL_TAXI' | 'READ_SIGN' | 'NONE';
+
+export type SpeechInputError =
+  | 'PERMISSION_DENIED'
+  | 'NOT_SUPPORTED'
+  | 'NETWORK_ERROR'
+  | 'TIMEOUT'
+  | 'ABORTED'
+  | 'UNKNOWN';
 
 export interface TTSOptions {
   lang: Language;
@@ -8,11 +17,17 @@ export interface TTSOptions {
   pitch: number;
 }
 
+export type Intent = 'BOOK_DOCTOR' | 'CALL_TAXI' | 'READ_SIGN' | 'NONE';
+
 export interface JarvisResponse {
   text: string;
   speak: string;
   intent: Intent;
-  toolResult?: unknown;
+}
+
+export interface Message {
+  role: 'user' | 'assistant';
+  content: string;
 }
 
 export type JarvisAction =

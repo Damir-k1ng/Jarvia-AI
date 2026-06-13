@@ -12,6 +12,14 @@ export default function App() {
     error: 'ERROR',
   };
 
+  const handleOrbClick = () => {
+    if (state === 'idle') {
+      startListening();
+    } else {
+      cancel();
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#000000] flex flex-col items-center justify-center p-4 relative overflow-hidden">
       {/* Background grid */}
@@ -25,7 +33,7 @@ export default function App() {
       {/* Corner HUD elements */}
       <div className="absolute top-4 left-4 text-[#00D4FF] font-mono text-xs space-y-1">
         <div className="flex items-center gap-2">
-          <div className="w-2 h-2 bg-[#00D4FF] rounded-full animate-pulse" />
+          <div className={`w-2 h-2 rounded-full ${state !== 'idle' ? 'bg-[#00FF88] animate-pulse' : 'bg-[#00D4FF]'}`} />
           <span>JARVIS v1.2.5</span>
         </div>
         <div className="opacity-60">STATUS: {state.toUpperCase()}</div>
@@ -35,13 +43,13 @@ export default function App() {
       <div className="absolute top-4 right-4 text-[#00D4FF] font-mono text-xs text-right space-y-1">
         <div className="opacity-60">LANG: RU</div>
         <div className="opacity-60">TTS: ACTIVE</div>
-        <div className="opacity-60">STT: READY</div>
+        <div className="opacity-60">STT: DEMO</div>
       </div>
 
       {/* Main content */}
       <div className="w-full max-w-md z-10">
         <div className="aspect-square mb-8 relative">
-          <OrbCanvas state={state} onClick={state === 'idle' ? startListening : cancel} />
+          <OrbCanvas state={state} onClick={handleOrbClick} />
           
           {/* Crosshair overlay */}
           <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
@@ -71,9 +79,22 @@ export default function App() {
           )}
 
           {state === 'idle' && !lastResponse && (
-            <p className="text-sm text-[#00D4FF]/60 font-mono mt-4">
-              Нажмите на реактор для активации
-            </p>
+            <div className="space-y-2">
+              <p className="text-sm text-[#00D4FF]/60 font-mono mt-4">
+                Нажмите на Arc Reactor для активации
+              </p>
+              <div className="flex flex-wrap gap-2 justify-center mt-4">
+                <div className="px-3 py-1 bg-[#00D4FF]/10 border border-[#00D4FF]/30 rounded text-xs text-[#00D4FF]">
+                  Запись к врачу
+                </div>
+                <div className="px-3 py-1 bg-[#00D4FF]/10 border border-[#00D4FF]/30 rounded text-xs text-[#00D4FF]">
+                  Вызов такси
+                </div>
+                <div className="px-3 py-1 bg-[#00D4FF]/10 border border-[#00D4FF]/30 rounded text-xs text-[#00D4FF]">
+                  Чтение вывески
+                </div>
+              </div>
+            </div>
           )}
         </div>
       </div>

@@ -1,10 +1,8 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import type { Language } from '../types';
-
-type SpeechInputError = 'PERMISSION_DENIED' | 'NOT_SUPPORTED' | 'NETWORK_ERROR' | 'TIMEOUT' | 'ABORTED' | 'UNKNOWN';
+import type { SpeechInputError } from '../types';
 
 interface SpeechInputHook {
-  startListening: (language?: Language) => void;
+  startListening: () => void;
   stopListening: () => void;
   isListening: boolean;
   transcript: string;
@@ -13,6 +11,7 @@ interface SpeechInputHook {
 }
 
 const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true';
+const DEMO_DELAY = 1500;
 const TIMEOUT_MS = 10000;
 
 export function useSpeechInput(): SpeechInputHook {
@@ -20,90 +19,222 @@ export function useSpeechInput(): SpeechInputHook {
   const [transcript, setTranscript] = useState('');
   const [error, setError] = useState<SpeechInputError | null>(null);
   const [isSupported] = useState(() => 'webkitSpeechRecognition' in window || 'SpeechRecognition' in window);
+
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const timeoutRef = useRef<number>();
+  const isProcessingRef = useRef(false);
 
   useEffect(() => {
-    return () => {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      if (recognitionRef.current) recognitionRef.current.abort();
+    if (!isSupported || DEMO_MODE) return;
+
+    const SpeechRecognitionAPI = 
+      (window as any).SpeechRecognition || 
+      (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognitionAPI) {
+      console.error('❌ SpeechRecognition API not available');
+      return;
+    }
+
+    const recognition = new SpeechRecognitionAPI();
+    recognitionRef.current = recognition;
+
+    // Настройки распознавания
+    recognition.lang = 'ru-RU';
+    recognition.continuous = false;  // Останавливаться после одной фразы
+    recognition.interimResults = false;  // Только финальные результаты
+    recognition.maxAlternatives = 1;
+
+    console.log('🎤 SpeechRecognition initialized:', {
+      lang: recognition.lang,
+      continuous: recognition.continuous,
+      interimResults: recognition.interimResults
+    });
+
+    recognition.onstart = () => {
+      console.log('🎤 Recognition started');
+      setIsListening(true);
+      setError(null);
+      isProcessingRef.current = false;
     };
-  }, []);
 
-  const stopListening = useCallback(() => {
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    if (recognitionRef.current) recognitionRef.current.stop();
-    setIsListening(false);
-  }, []);
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      console.log('📝 Recognition result event:', event);
+      
+      if (isProcessingRef.current) {
+        console.log('⚠️ Already processing, ignoring duplicate result');
+        return;
+      }
+      
+      isProcessingRef.current = true;
 
-  const startListening = useCallback((language: Language = 'ru') => {
-    setError(null);
+      const result = event.results[0];
+      if (result && result[0]) {
+        const transcriptText = result[0].transcript.trim();
+        const confidence = result[0].confidence;
+        
+        console.log('✅ Transcript:', transcriptText);
+        console.log('📊 Confidence:', confidence);
+        
+        if (transcriptText) {
+          setTranscript(transcriptText);
+          setIsListening(false);
+          
+          if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current);
+          }
+        } else {
+          console.warn('⚠️ Empty transcript');
+          setError('UNKNOWN');
+          setIsListening(false);
+        }
+      }
+    };
+
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      console.error('❌ Recognition error:', event.error, event.message);
+      
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+
+      let errorType: SpeechInputError;
+      switch (event.error) {
+        case 'not-allowed':
+        case 'service-not-allowed':
+          errorType = 'PERMISSION_DENIED';
+          break;
+        case 'network':
+          errorType = 'NETWORK_ERROR';
+          break;
+        case 'aborted':
+          errorType = 'ABORTED';
+          break;
+        case 'no-speech':
+          errorType = 'TIMEOUT';
+          break;
+        default:
+          errorType = 'UNKNOWN';
+      }
+
+      setError(errorType);
+      setIsListening(false);
+      isProcessingRef.current = false;
+    };
+
+    recognition.onend = () => {
+      console.log('🎤 Recognition ended');
+      setIsListening(false);
+      
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+
+    return () => {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {
+          console.warn('⚠️ Error stopping recognition:', e);
+        }
+      }
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, [isSupported]);
+
+  const startListening = useCallback(() => {
+    console.log('🎤 startListening called');
     setTranscript('');
+    setError(null);
+    isProcessingRef.current = false;
 
     if (DEMO_MODE) {
+      console.log('🎭 DEMO MODE: Simulating speech input');
       setIsListening(true);
-      setTimeout(() => {
-        setTranscript('запиши меня к терапевту');
+      
+      timeoutRef.current = window.setTimeout(() => {
+        const demoTranscripts = [
+          'запиши меня к терапевту',
+          'вызови такси',
+          'прочитай вывеску'
+        ];
+        const randomTranscript = demoTranscripts[Math.floor(Math.random() * demoTranscripts.length)];
+        
+        console.log('🎭 DEMO: Setting transcript:', randomTranscript);
+        setTranscript(randomTranscript);
         setIsListening(false);
-      }, 1500);
+      }, DEMO_DELAY);
       return;
     }
 
     if (!isSupported) {
+      console.error('❌ Speech recognition not supported');
       setError('NOT_SUPPORTED');
       return;
     }
 
+    if (!recognitionRef.current) {
+      console.error('❌ Recognition not initialized');
+      setError('UNKNOWN');
+      return;
+    }
+
     try {
-      const SpeechRecognitionAPI = (window as any).webkitSpeechRecognition || window.SpeechRecognition;
-      if (!SpeechRecognitionAPI) {
-        setError('NOT_SUPPORTED');
-        return;
-      }
+      console.log('🎤 Starting recognition...');
+      recognitionRef.current.start();
 
-      const recognition = new SpeechRecognitionAPI();
-      recognitionRef.current = recognition;
-      recognition.lang = language === 'kk' ? 'kk-KZ' : 'ru-RU';
-      recognition.continuous = false;
-      recognition.interimResults = false;
-
-      recognition.onstart = () => {
-        setIsListening(true);
-        timeoutRef.current = window.setTimeout(() => {
+      // Таймаут на случай если распознавание зависнет
+      timeoutRef.current = window.setTimeout(() => {
+        console.warn('⏱️ Recognition timeout');
+        if (recognitionRef.current && isListening) {
+          try {
+            recognitionRef.current.stop();
+          } catch (e) {
+            console.warn('⚠️ Error stopping on timeout:', e);
+          }
           setError('TIMEOUT');
-          stopListening();
-        }, TIMEOUT_MS);
-      };
-
-      recognition.onresult = (event: any) => {
-        if (timeoutRef.current) clearTimeout(timeoutRef.current);
-        const result = event.results[0];
-        if (result?.[0]) setTranscript(result[0].transcript);
-        setIsListening(false);
-      };
-
-      recognition.onerror = (event: any) => {
-        if (timeoutRef.current) clearTimeout(timeoutRef.current);
-        let errorType: SpeechInputError = 'UNKNOWN';
-        if (event.error === 'not-allowed') errorType = 'PERMISSION_DENIED';
-        else if (event.error === 'network') errorType = 'NETWORK_ERROR';
-        else if (event.error === 'aborted') errorType = 'ABORTED';
-        else if (event.error === 'no-speech') errorType = 'TIMEOUT';
-        setError(errorType);
-        setIsListening(false);
-      };
-
-      recognition.onend = () => {
-        if (timeoutRef.current) clearTimeout(timeoutRef.current);
-        setIsListening(false);
-      };
-
-      recognition.start();
+          setIsListening(false);
+        }
+      }, TIMEOUT_MS);
     } catch (err) {
+      console.error('❌ Error starting recognition:', err);
       setError('UNKNOWN');
       setIsListening(false);
     }
-  }, [isSupported, stopListening]);
+  }, [isSupported, isListening]);
 
-  return { startListening, stopListening, isListening, transcript, error, isSupported };
+  const stopListening = useCallback(() => {
+    console.log('🛑 stopListening called');
+    
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+
+    if (DEMO_MODE) {
+      setIsListening(false);
+      return;
+    }
+
+    if (recognitionRef.current && isListening) {
+      try {
+        recognitionRef.current.stop();
+      } catch (err) {
+        console.warn('⚠️ Error stopping recognition:', err);
+      }
+    }
+    
+    setIsListening(false);
+  }, [isListening]);
+
+  return {
+    startListening,
+    stopListening,
+    isListening,
+    transcript,
+    error,
+    isSupported,
+  };
 }
