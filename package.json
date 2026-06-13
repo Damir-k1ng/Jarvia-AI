@@ -1,0 +1,18 @@
+{
+  "name": "jarvis-ai-assistant",
+  "version": "1.0.0",
+  "description": "JARVIS - Voice AI Assistant for visually impaired people",
+  "private": true,
+  "scripts": {
+    "install:all": "cd backend && npm install && cd ../frontend && npm install",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "build:backend": "cd backend && npm run build",
+    "build:frontend": "cd frontend && npm run build",
+    "start": "cd backend && npm start",
+    "deploy": "npm run build:backend && npm run build:frontend"
+  },
+  "keywords": ["jarvis", "ai", "voice-assistant", "accessibility"],
+  "author": "",
+  "license": "MIT"
+}
