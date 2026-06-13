@@ -3,7 +3,6 @@ import { useTTS } from './useTTS';
 import { useSpeechInput } from './useSpeechInput';
 import type { JarvisState, JarvisAction, Language } from '../types';
 import { getDemoResponse } from '../services/demoResponses';
-
 const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true';
 
 interface JarvisHook {
