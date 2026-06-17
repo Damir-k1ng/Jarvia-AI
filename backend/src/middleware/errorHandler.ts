@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import pino from 'pino';
+import { env } from '../config/env.js';
 
 const logger = pino({
   transport: {
@@ -26,8 +27,8 @@ export function errorHandler(
     ok: false,
     error: {
       code: 'INTERNAL_ERROR',
-      message: env.NODE_ENV === 'production' 
-        ? 'Internal server error' 
+      message: env.NODE_ENV === 'production'
+        ? 'Internal server error'
         : err.message,
     },
   });
