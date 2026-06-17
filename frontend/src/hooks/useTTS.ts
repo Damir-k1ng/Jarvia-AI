@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { TTSOptions, Language } from '../types';
+import { playJarvisPhrase, stopJarvisPhrase, isJarvisSpeaking, detectJarvisPhrase } from '../services/jarvisTTS';
 
 interface TTSHook {
   speak: (text: string, options?: Partial<TTSOptions>) => void;
@@ -23,6 +24,7 @@ export function useTTS(): TTSHook {
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const voicesLoadedRef = useRef(false);
   const bestVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
+  const checkIntervalRef = useRef<number>();
 
   useEffect(() => {
     if (!isSupported) return;
@@ -69,9 +71,13 @@ export function useTTS(): TTSHook {
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
       }
+      if (checkIntervalRef.current) {
+        clearInterval(checkIntervalRef.current);
+      }
       if (utteranceRef.current) {
         window.speechSynthesis.cancel();
       }
+      stopJarvisPhrase();
     };
   }, [isSupported]);
 
@@ -80,23 +86,62 @@ export function useTTS(): TTSHook {
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
     }
+    if (checkIntervalRef.current) {
+      clearInterval(checkIntervalRef.current);
+    }
+    
+    // Остановить браузерный TTS
     window.speechSynthesis.cancel();
-    setIsSpeaking(false);
     utteranceRef.current = null;
+    
+    // Остановить JARVIS аудио
+    stopJarvisPhrase();
+    
+    setIsSpeaking(false);
   }, []);
 
-  const speak = useCallback(
-    (text: string, options: Partial<TTSOptions> = {}) => {
-      console.log('🔊 TTS speak called:', text.substring(0, 50) + '...');
-      
-      if (!isSupported) {
-        console.warn('⚠️ TTS не поддерживается');
-        return;
-      }
+  /**
+   * Озвучивание через голос JARVIS (WAV файлы)
+   */
+  const speakWithJarvis = useCallback(
+    async (text: string) => {
+      try {
+        console.log('🎬 [JARVIS TTS] Текст для озвучивания:', text);
+        setIsSpeaking(true);
 
-      if (isSpeaking) {
-        console.log('🔇 Cancelling previous speech');
-        cancel();
+        // Определить подходящую фразу JARVIS
+        const phrase = detectJarvisPhrase(text);
+        console.log('🎬 [JARVIS TTS] Определенная фраза:', phrase);
+        
+        if (phrase) {
+          // Воспроизвести готовую фразу JARVIS
+          console.log('🎬 [JARVIS TTS] Воспроизведение голоса JARVIS:', phrase);
+          await playJarvisPhrase({ phrase, volume: 0.8 });
+          console.log('🎬 [JARVIS TTS] Воспроизведение завершено');
+          setIsSpeaking(false);
+        } else {
+          // Если нет подходящей фразы - использовать браузерный TTS
+          console.log('🤖 [Browser TTS] Фраза не найдена, используем браузерный TTS');
+          speakWithBrowser(text, DEFAULT_OPTIONS);
+        }
+      } catch (error) {
+        console.error('❌ [JARVIS TTS] Ошибка:', error);
+        setIsSpeaking(false);
+        // Fallback на браузерный TTS
+        speakWithBrowser(text, DEFAULT_OPTIONS);
+      }
+    },
+    []
+  );
+
+  /**
+   * Озвучивание через браузерный Web Speech API
+   */
+  const speakWithBrowser = useCallback(
+    (text: string, options: TTSOptions) => {
+      if (!isSupported) {
+        console.warn('TTS не поддерживается в этом браузере');
+        return;
       }
 
       // Если голоса ещё не загружены, загружаем их сейчас
@@ -111,45 +156,31 @@ export function useTTS(): TTSHook {
         }
       }
 
-      let textToSpeak = text;
-      if (text.length > MAX_TEXT_LENGTH) {
-        textToSpeak = text.substring(0, MAX_TEXT_LENGTH) + '...';
-      }
-
-      const mergedOptions = { ...DEFAULT_OPTIONS, ...options };
-
-      const utterance = new SpeechSynthesisUtterance(textToSpeak);
+      // Создать utterance
+      const utterance = new SpeechSynthesisUtterance(text);
       utteranceRef.current = utterance;
 
+      // Настроить язык
       const langMap: Record<Language, string> = {
         ru: 'ru-RU',
         kk: 'kk-KZ',
       };
-      utterance.lang = langMap[mergedOptions.lang] || 'ru-RU';
-      utterance.rate = mergedOptions.rate ?? 1.0;
-      utterance.pitch = mergedOptions.pitch ?? 0.8;
+      utterance.lang = langMap[options.lang] || 'ru-RU';
+      utterance.rate = options.rate ?? 1.0;
+      utterance.pitch = options.pitch ?? 0.8;
 
       // Используем лучший голос если он найден
       if (bestVoiceRef.current) {
         utterance.voice = bestVoiceRef.current;
         console.log('🎙️ Using voice:', bestVoiceRef.current.name);
-      } else {
-        console.warn('⚠️ No specific voice selected, using default');
       }
 
-      // Добавляем паузы для естественности
-      utterance.text = textToSpeak
-        .replace(/\./g, '. ')
-        .replace(/,/g, ', ')
-        .replace(/:/g, ': ');
-
+      // Обработчики событий
       utterance.onstart = () => {
-        console.log('▶️ TTS started');
         setIsSpeaking(true);
       };
 
       utterance.onend = () => {
-        console.log('⏹️ TTS ended');
         setIsSpeaking(false);
         utteranceRef.current = null;
         if (timeoutRef.current) {
@@ -158,7 +189,7 @@ export function useTTS(): TTSHook {
       };
 
       utterance.onerror = (event) => {
-        console.error('❌ TTS error:', event);
+        console.error('Browser TTS ошибка:', event);
         setIsSpeaking(false);
         utteranceRef.current = null;
         if (timeoutRef.current) {
@@ -166,31 +197,62 @@ export function useTTS(): TTSHook {
         }
       };
 
-      console.log('🎤 Calling speechSynthesis.speak()');
-      console.log('📊 Settings:', {
-        voice: utterance.voice?.name || 'default',
-        rate: utterance.rate,
-        pitch: utterance.pitch,
-        lang: utterance.lang
-      });
-
-      // Важно: сначала отменяем все предыдущие, потом говорим
+      // Запустить озвучивание
       window.speechSynthesis.cancel();
       window.speechSynthesis.speak(utterance);
 
-      // iOS fallback timeout
-      const estimatedDuration = (textToSpeak.length / 10) * 1000 + 2000;
-      console.log(`⏱️ Setting fallback timeout: ${estimatedDuration}ms`);
+      // Fallback таймаут для iOS
+      const estimatedDuration = (text.length / 10) * 1000 + 2000;
       timeoutRef.current = window.setTimeout(() => {
-        console.log('⏱️ Fallback timeout triggered');
         if (isSpeaking) {
           setIsSpeaking(false);
           utteranceRef.current = null;
         }
       }, estimatedDuration);
     },
-    [isSupported, isSpeaking, cancel]
+    [isSupported, isSpeaking]
   );
+
+  const speak = useCallback(
+    (text: string, options: Partial<TTSOptions> = {}) => {
+      console.log('🎤 [TTS speak] ВЫЗВАНА ФУНКЦИЯ speak()');
+      console.log('🎤 [TTS speak] Текст:', text);
+      
+      // Если уже говорит - сначала остановить
+      if (isSpeaking) {
+        console.log('🎤 [TTS speak] Останавливаем предыдущее воспроизведение');
+        cancel();
+      }
+
+      // Обрезать слишком длинный текст
+      let textToSpeak = text;
+      if (text.length > MAX_TEXT_LENGTH) {
+        textToSpeak = text.substring(0, MAX_TEXT_LENGTH) + '...';
+      }
+
+      const mergedOptions: TTSOptions = { ...DEFAULT_OPTIONS, ...options };
+
+      console.log('🎤 [TTS speak] Вызываем speakWithJarvis()');
+      // Попробовать использовать голос JARVIS
+      speakWithJarvis(textToSpeak);
+    },
+    [isSpeaking, cancel, speakWithJarvis]
+  );
+
+  // Проверять статус JARVIS аудио
+  useEffect(() => {
+    checkIntervalRef.current = window.setInterval(() => {
+      if (isSpeaking && !isJarvisSpeaking() && !utteranceRef.current) {
+        setIsSpeaking(false);
+      }
+    }, 100);
+
+    return () => {
+      if (checkIntervalRef.current) {
+        clearInterval(checkIntervalRef.current);
+      }
+    };
+  }, [isSpeaking]);
 
   return {
     speak,

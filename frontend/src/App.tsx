@@ -2,7 +2,7 @@ import { useJarvis } from './hooks/useJarvis';
 import { OrbCanvas } from './components/OrbCanvas';
 
 export default function App() {
-  const { state, startListening, cancel, lastResponse } = useJarvis();
+  const { state, startListening, cancel, response } = useJarvis();
 
   const stateLabels = {
     idle: 'SYSTEM READY',
@@ -70,15 +70,15 @@ export default function App() {
             <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-32 h-px bg-gradient-to-r from-transparent via-[#00D4FF] to-transparent" />
           </div>
           
-          {lastResponse && (
+          {response && (
             <div className="mt-6 p-4 border border-[#00D4FF]/30 bg-[#00D4FF]/5 rounded backdrop-blur-sm">
               <p className="text-lg text-[#00FFFF] font-body leading-relaxed">
-                {lastResponse}
+                {response.speak}
               </p>
             </div>
           )}
 
-          {state === 'idle' && !lastResponse && (
+          {state === 'idle' && !response && (
             <div className="space-y-2">
               <p className="text-sm text-[#00D4FF]/60 font-mono mt-4">
                 Нажмите на Arc Reactor для активации

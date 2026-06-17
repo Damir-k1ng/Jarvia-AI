@@ -1,9 +1,8 @@
 import { useReducer, useEffect, useState, useCallback, useRef } from 'react';
 import { useTTS } from './useTTS';
 import { useSpeechInput } from './useSpeechInput';
-import type { JarvisState, JarvisAction, Language } from '../types';
+import type { JarvisState, JarvisAction, Language, JarvisResponse } from '../types';
 import { getDemoResponse } from '../services/demoResponses';
-const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true';
 
 interface JarvisHook {
   state: JarvisState;
@@ -11,7 +10,7 @@ interface JarvisHook {
   setLanguage: (lang: Language) => void;
   startListening: () => void;
   cancel: () => void;
-  lastResponse: string;
+  response: JarvisResponse | null;
 }
 
 function jarvisReducer(state: JarvisState, action: JarvisAction): JarvisState {
@@ -38,7 +37,7 @@ function jarvisReducer(state: JarvisState, action: JarvisAction): JarvisState {
 export function useJarvis(): JarvisHook {
   const [state, dispatch] = useReducer(jarvisReducer, 'idle');
   const [language, setLanguage] = useState<Language>('ru');
-  const [lastResponse, setLastResponse] = useState('');
+  const [response, setResponse] = useState<JarvisResponse | null>(null);
   const processedTranscriptRef = useRef<string>('');
   
   const { speak, cancel: cancelTTS, isSpeaking } = useTTS();
@@ -63,15 +62,15 @@ export function useJarvis(): JarvisHook {
       // Process response
       setTimeout(() => {
         console.log('🤔 Processing response...');
-        const response = getDemoResponse(transcript);
-        console.log('💬 Response:', response);
+        const demoResponse = getDemoResponse(transcript);
+        console.log('💬 Response:', demoResponse);
         
-        setLastResponse(response.speak);
-        dispatch({ type: 'RESPONSE_RECEIVED', payload: response });
+        setResponse(demoResponse);
+        dispatch({ type: 'RESPONSE_RECEIVED', payload: demoResponse });
         
         // Start speaking
         console.log('🔊 Starting TTS...');
-        speak(response.speak, { lang: language });
+        speak(demoResponse.speak, { lang: language });
       }, 800);
     }
   }, [transcript, state, language, speak]);
@@ -89,8 +88,8 @@ export function useJarvis(): JarvisHook {
     console.log('🎤 Start listening');
     processedTranscriptRef.current = '';
     dispatch({ type: 'START_LISTENING' });
-    startSTT(language);
-  }, [language, startSTT]);
+    startSTT();
+  }, [startSTT]);
 
   const cancel = useCallback(() => {
     console.log('❌ Cancel');
@@ -99,5 +98,5 @@ export function useJarvis(): JarvisHook {
     dispatch({ type: 'CANCEL' });
   }, [cancelTTS]);
 
-  return { state, language, setLanguage, startListening, cancel, lastResponse };
+  return { state, language, setLanguage, startListening, cancel, response };
 }
